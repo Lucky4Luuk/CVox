@@ -14,6 +14,8 @@ function mat:create()
   setmetatable(t, mat)
   t.color = vec3(1,1,1)
   t.opacity = 1
+  t.roughness = 0.5
+  t.metallic = 0
   table.insert(_G["material_list"], t) --Add to this queu, so the renderer knows it exists
   t.id = #_G["material_list"]
   --table.insert(_G["material_queu"], t) --Add to this queu, so the renderer can update the shader

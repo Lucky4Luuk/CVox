@@ -1,7 +1,7 @@
 --Made by Luuk van Oijen
 --Started on 20-08-2018
 --Uses LML, my personal math library
---Last updated: 20-08-2018
+--Last updated: 08-09-2018
 
 function send(shader, name, value)
   if shader:hasUniform(name) then
@@ -57,7 +57,7 @@ local function sendRenderQueu(s)
     local pre = "objects["..tostring(i-1).."]."
     local obj = _G["render_queu"][i]
     if obj.components["Material"] then
-      send(s, pre.."mat_id", obj.components["Material"].id)
+      send(s, pre.."mat_id", obj.components["Material"].id-1)
     end
     send(s, pre.."type", obj.components["SDF Render"].sdf.type_num)
     send(s, pre.."pos", obj.components["Transform"].pos:table())
@@ -68,7 +68,16 @@ local function sendRenderQueu(s)
     local pre = "materials["..tostring(i-1).."]."
     local mat = _G["material_list"][i]
     send(s, pre.."color", mat.color:table())
+    send(s, pre.."roughness", mat.roughness)
+    send(s, pre.."metallic", mat.metallic)
   end
+  for i=1, #_G["dir_light_queu"] do
+    local pre = "dir_lights["..tostring(i-1).."]."
+    local light = _G["dir_light_queu"][i].components["Light"]
+    send(s, pre.."col", light.color:table())
+    send(s, pre.."dir", light.dir:table())
+  end
+  send(s, "dir_light_length", #_G["dir_light_queu"])
 end
 
 function r:draw(x,y,w,h)
@@ -83,6 +92,7 @@ function r:draw(x,y,w,h)
   love.graphics.setShader() --TODO: Maybe completely unnecessary due to push/pop
   love.graphics.pop()
   _G["render_queu"] = {}
+  _G["dir_light_queu"] = {}
 end
 
 r.__call = function(...) return r:create(...) end

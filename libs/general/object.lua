@@ -29,6 +29,11 @@ function object:draw()
   if self.components["SDF Render"] then
     table.insert(_G["render_queu"], self)
   end
+  if self.components["Light"] then
+    if self.components["Light"].type == "directional" then
+      table.insert(_G["dir_light_queu"], self)
+    end
+  end
 end
 
 object.__call = function(...) return object:create(...) end
