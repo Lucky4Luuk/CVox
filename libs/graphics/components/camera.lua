@@ -9,7 +9,7 @@ cam.__index = cam
 function cam:create()
   local c = {}
   setmetatable(c, cam)
-  c.pos = vec3(0,0,-5)
+  c.pos = vec3(0,0,0)
   c.look = vec3(0,0,1)
   c.roll = 0
   c.renderer = require("libs.graphics.renderer"):create()
@@ -22,7 +22,7 @@ end
 
 function cam:setPosition(v) --v means vector
   self.pos = v
-  self.renderer:setPosition(cam.pos)
+  self.renderer:setPosition(self.pos)
 end
 
 function cam:setLookDir(v) --v means vector

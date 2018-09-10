@@ -10,6 +10,7 @@ local scene = require("libs.general.scene"):create()
 
 local cam = require("libs.general.object"):create()
 cam:addComponent("libs.graphics.components.camera")
+cam.components["Camera"]:setPosition(vec3(0,0,-5))
 
 --Create object
 local plane = require("libs.general.object"):create("Plane 1")
@@ -55,6 +56,7 @@ scene:addObject(light)
 function love.draw()
   scene:draw()
   cam.components["Camera"]:render()
+  love.graphics.setColor(0,0,0,1)
   love.graphics.print("MS: "..tostring(math.floor(love.timer.getDelta() * 100000)/100), 0,0)
   love.graphics.print("FPS: "..tostring(love.timer.getFPS()), 0,12)
 end
