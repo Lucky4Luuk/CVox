@@ -47,6 +47,10 @@ uniform int dir_light_length;
 uniform Camera cam;
 uniform vec2 res;
 
+float rand(vec2 co){
+  return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
+}
+
 float sdPlane(vec3 p)
 {
   return p.y;
@@ -115,12 +119,47 @@ MAP_RES map(vec3 pos)
   MAP_RES res;
   res.dist = sdAll(pos, objects[0]);
   res.id = 0;
-  for (int i=1; i < 2048; i++) {
-    if (i >= obj_length) break;
-    MAP_RES r;
-    r.dist = sdAll(pos, objects[i]);
-    r.id = i;
-    res = opU(res, r);
+  MAP_RES first;
+  if (obj_length >= 1) {
+    first.dist = sdAll(pos, objects[1]);
+    first.id = 1;
+    res = opU(res, first);
+  }
+  if (obj_length >= 2) {
+    first.dist = sdAll(pos, objects[2]);
+    first.id = 2;
+    res = opU(res, first);
+  }
+  if (obj_length >= 3) {
+    first.dist = sdAll(pos, objects[3]);
+    first.id = 3;
+    res = opU(res, first);
+  }
+  if (obj_length >= 4) {
+    for (int i=4; i < 256; i += 4) {
+      if (i >= obj_length) break;
+      MAP_RES r;
+      if (obj_length >= i) {
+        r.dist = sdAll(pos, objects[i]);
+        r.id = i;
+        res = opU(res, r);
+      }
+      if (obj_length >= i + 1) {
+        r.dist = sdAll(pos, objects[i+1]);
+        r.id = i+1;
+        res = opU(res, r);
+      }
+      if (obj_length >= i + 2) {
+        r.dist = sdAll(pos, objects[i+2]);
+        r.id = i+2;
+        res = opU(res, r);
+      }
+      if (obj_length >= i + 3) {
+        r.dist = sdAll(pos, objects[i+3]);
+        r.id = i+3;
+        res = opU(res, r);
+      }
+    }
   }
   return res;
 }
@@ -134,7 +173,7 @@ float softshadow( in vec3 ro, in vec3 rd, in float mint, in float tmax )
 {
 	float res = 1.0;
   float t = mint;
-  for( int i=0; i<64; i++ )
+  for( int i=0; i<32; i++ )
   {
 		float h = map( ro + rd*t ).dist;
     res = min( res, 8.0*h/t );
@@ -264,17 +303,6 @@ vec2 PrefilteredDFG_Karis(float roughness, float NoV) {
     return vec2(-1.04, 1.04) * a004 + r.zw;
 }
 
-//Oh boy.
-//The final BRDF function that ties it all together.
-//pos is the worldposition where the object was hit.
-//n is the surface normal corresponding to pos.
-//rd is the ray's direction.
-//l is the current light's direction.
-//lp is the current light's position.
-//range is the light's range (not used for the directional light).
-//baseColor is the object's base color.
-//roughness is the object's roughness.
-//metallic is the object's metallic value.
 vec3 BRDF (vec3 pos, vec3 n, vec3 rd, vec3 l, vec3 lp, float range, vec3 baseColor, float roughness, float metallic)
 {
 	vec3 color = vec3(0.0);
@@ -288,8 +316,8 @@ vec3 BRDF (vec3 pos, vec3 n, vec3 rd, vec3 l, vec3 lp, float range, vec3 baseCol
 	float NoH = saturate(dot(n, h));
 	float LoH = saturate(dot(l, h));
 
-	float intensity = 2.0; //Default: 2.0
-	float indirectIntensity = 0.64; //Default: 0.64
+	float intensity = 1.0; //Default: 2.0
+	float indirectIntensity = 1.0; //Default: 0.64
 
 	if (range > 0) { //This is probably the worst distance calculation possible. But it seems to work.
 		intensity = 0.0;
@@ -320,6 +348,7 @@ vec3 BRDF (vec3 pos, vec3 n, vec3 rd, vec3 l, vec3 lp, float range, vec3 baseCol
 
 	//Diffuse Indirect
 	vec3 indirectDiffuse = Irradiance_SphericalHarmonics(n) * Fd_Lambert();
+  //vec3 indirectDiffuse = castRay(pos, r, 32).mat.color * Fd_Lambert();
 
 	RAY_RES indirectHit = castRay(pos, r, 32);
   //vec3 tex_col = objects[indirectHit.id].avg_tex_col;
@@ -347,13 +376,15 @@ vec4 effect(vec4 color, sampler2D tex, vec2 uv, vec2 screen_coords)
   //Ray direction
   vec3 rd = cam_mat * normalize(vec3(p.xy, 2.0));
 
-  RAY_RES res = castRay(cam.pos, rd, 64);
+  RAY_RES res = castRay(cam.pos, rd, 128);
+  //return vec4(vec3(res.dist / 64.0), 1.0);
+
   if (res.dist < 0.0) return vec4(res.mat.color, 1.0);
   vec3 pos = cam.pos + rd * res.dist;
   vec3 nor = calcNormal(pos);
   vec3 col;
 
-  for (int i=0; i<1024; i++) {
+  for (int i=0; i<256; i++) {
     if (i >= dir_light_length) break;
     vec3 lig = normalize(dir_lights[i].dir);
     col += BRDF(pos, nor, rd, lig, vec3(0.0), -1, res.mat.color, res.mat.roughness, res.mat.metallicness);
