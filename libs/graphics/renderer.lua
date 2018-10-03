@@ -35,7 +35,7 @@ function r:setPosition(v)
 end
 
 function r:setLookDir(v)
-  self.cam_dir = v
+  self.cam_look = v
 end
 
 function r:setRoll(f)
@@ -78,6 +78,11 @@ local function sendRenderQueu(s)
     send(s, pre.."dir", light.dir:table())
   end
   send(s, "dir_light_length", #_G["dir_light_queu"])
+
+  if _G["HEIGHT_MAP"][1] then
+    send(s, "hmap", _G["HEIGHT_MAP"][2])
+    send(s, "hmap_res", _G["HEIGHT_MAP"][3])
+  end
 end
 
 function r:draw(x,y,w,h)

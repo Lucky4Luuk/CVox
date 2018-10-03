@@ -44,16 +44,42 @@ uniform DirectionalLight dir_lights[256];
 uniform int obj_length;
 uniform int dir_light_length;
 
+uniform sampler2D hmap;
+uniform vec3 hmap_res; //Z is scale
+
 uniform Camera cam;
 uniform vec2 res;
 
-float rand(vec2 co){
+float rand(vec2 co)
+{
   return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
+}
+
+vec2 vmod(vec2 a, vec2 b)
+{
+  //x - y * floor(x/y)
+  return vec2(
+    a.x - b.x * floor(a.x / b.x),
+    a.y - b.y * floor(a.y / b.y)
+    );
+}
+
+float getHMapHeight(vec2 p)
+{
+  vec2 uv = vmod(((p + hmap_res.xy / vec2(2.0)) / hmap_res.xy), vec2(1.0));
+  //if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0)
+  //  return 0.0;
+  return Texel(hmap, uv).r * hmap_res.z;
 }
 
 float sdPlane(vec3 p)
 {
   return p.y;
+}
+
+float sdTerrain(vec3 p)
+{
+  return p.y - getHMapHeight(p.xz);
 }
 
 float sdBox(vec3 p, vec3 b)
@@ -73,6 +99,8 @@ float sdAll(vec3 ray_pos, Object obj)
     return sdPlane(ray_pos - obj.pos);
   if (obj.type == 1) //Sphere
     return sdSphere(ray_pos - obj.pos, obj.size.x / 2.0);
+  if (obj.type == 2)
+    return sdTerrain(ray_pos - obj.pos);
   return -1.0;
 }
 
@@ -203,7 +231,7 @@ RAY_RES castRay(vec3 ro, vec3 rd, int samples)
   float K = 0.001;
   for (int i=0; i<samples; i++) {
     MAP_RES r = map(ro + rd * t);
-    if (r.dist < K * t) {
+    if (r.dist < K * t && r.dist >= 0.0) {
       //return vec3(r.y);
       Object o = objects[r.id];
       Material m = materials[o.mat_id];
@@ -316,10 +344,11 @@ vec3 BRDF (vec3 pos, vec3 n, vec3 rd, vec3 l, vec3 lp, float range, vec3 baseCol
 	float NoH = saturate(dot(n, h));
 	float LoH = saturate(dot(l, h));
 
-	float intensity = 1.0; //Default: 2.0
-	float indirectIntensity = 1.0; //Default: 0.64
+	float intensity = 2.0; //Online implementation gave: 2.0
+	float indirectIntensity = 0.64; //Online implementation gave: 0.64
 
-	if (range > 0) { //This is probably the worst distance calculation possible. But it seems to work.
+	if (range > 0) { //This is probably the worst distance calculation possible. But it seems to work for the values from the online implementation.
+    //TODO: Fix this
 		intensity = 0.0;
 		indirectIntensity = 0.0;
 		intensity += clamp(range-distance(pos, lp),0.0,range);
@@ -364,6 +393,27 @@ vec3 BRDF (vec3 pos, vec3 n, vec3 rd, vec3 l, vec3 lp, float range, vec3 baseCol
 	return color;
 }
 
+float orenNayarDiffuse(
+  vec3 lightDirection,
+  vec3 viewDirection,
+  vec3 surfaceNormal,
+  float roughness,
+  float albedo) {
+
+  float LdotV = dot(lightDirection, viewDirection);
+  float NdotL = dot(lightDirection, surfaceNormal);
+  float NdotV = dot(surfaceNormal, viewDirection);
+
+  float s = LdotV - NdotL * NdotV;
+  float t = mix(1.0, max(NdotL, NdotV), step(0.0, s));
+
+  float sigma2 = roughness * roughness;
+  float A = 1.0 + sigma2 * (albedo / (sigma2 + 0.13) + 0.5 / (sigma2 + 0.33));
+  float B = 0.45 * sigma2 / (sigma2 + 0.09);
+
+  return albedo * max(0.0, NdotL) * (A + B * s / t) / PI;
+}
+
 vec4 effect(vec4 color, sampler2D tex, vec2 uv, vec2 screen_coords)
 {
   //Camera matrix calculation
@@ -384,10 +434,14 @@ vec4 effect(vec4 color, sampler2D tex, vec2 uv, vec2 screen_coords)
   vec3 nor = calcNormal(pos);
   vec3 col;
 
+  //return vec4((nor + vec3(1.0)) / vec3(2.0), 1.0);
+
   for (int i=0; i<256; i++) {
     if (i >= dir_light_length) break;
     vec3 lig = normalize(dir_lights[i].dir);
     col += BRDF(pos, nor, rd, lig, vec3(0.0), -1, res.mat.color, res.mat.roughness, res.mat.metallicness);
+    //col += orenNayarDiffuse(lig, rd, nor, res.mat.roughness, 1.0) * res.mat.color * softshadow(pos, lig, 0.02, 25.0);
+    //col += orenNayarDiffuse(lig, rd, nor, res.mat.roughness, softshadow(pos, lig, 0.02, 25.0)) * res.mat.color;
   }
 
   return vec4(col, 1.0);

@@ -27,12 +27,12 @@ end
 
 function cam:setLookDir(v) --v means vector
   self.look = v
-  self.renderer:setLookDir(cam.look)
+  self.renderer:setLookDir(self.look)
 end
 
 function cam:setRoll(f) --f means float
   self.roll = f
-  self.renderer:setRoll(cam.roll)
+  self.renderer:setRoll(self.roll)
 end
 
 function cam:render()

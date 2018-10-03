@@ -6,6 +6,7 @@
 local SDF_type_lookup = {}
 SDF_type_lookup["sdPlane"] = 0
 SDF_type_lookup["sdSphere"] = 1
+SDF_type_lookup["sdTerrain"] = 2
 
 local sdf = {_TYPE="Component", _SUBTYPE="SDF", _NAME="SDF"}
 sdf.__index = sdf
