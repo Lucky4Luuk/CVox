@@ -16,15 +16,18 @@ function mat:create()
   t.opacity = 1
   t.roughness = 0.5
   t.metallic = 0
+  t.use_tex = false
   table.insert(_G["material_list"], t) --Add to this queu, so the renderer knows it exists
   t.id = #_G["material_list"]
   --table.insert(_G["material_queu"], t) --Add to this queu, so the renderer can update the shader
   return t
 end
 
-function mat:setColor(v) --TODO: Check type
-  self.color = v
-  --table.insert(_G["material_queu"], t)
+function mat:loadTexture(i)
+  self.use_tex = true
+  local tex = love.graphics.newImage(i)
+  local size = {x=tex:getWidth(), y=tex:getHeight()}
+  table.insert(_G["texture_list"], {image=tex, size=size, mat_id=self.id})
 end
 
 mat.__call = function(...) return mat:create(...) end

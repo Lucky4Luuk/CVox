@@ -5,7 +5,6 @@ struct Object {
   int type; //Type of object
   vec3 pos; //Position of object
   vec3 size; //Only uses x in case of sphere
-  int mat_id; //To index the material list
 };
 
 struct Material {
@@ -13,6 +12,7 @@ struct Material {
   float opacity; //Unused right win
   float roughness; //Roughness
   float metallicness; //Metallicness
+  int use_tex;
 };
 
 struct DirectionalLight {
@@ -38,10 +38,9 @@ struct RAY_RES {
   float dist;
 };
 
-uniform Object objects[256];
-uniform Material materials[256];
+uniform Object object;
+uniform Material material;
 uniform DirectionalLight dir_lights[256];
-uniform int obj_length;
 uniform int dir_light_length;
 
 uniform sampler2D hmap;
@@ -49,6 +48,11 @@ uniform vec3 hmap_res; //Z is scale
 
 uniform Camera cam;
 uniform vec2 res;
+
+uniform sampler2D depth_map;
+uniform sampler2D src_map;
+
+uniform sampler2D mat_tex;
 
 float rand(vec2 co)
 {
@@ -79,7 +83,9 @@ float sdPlane(vec3 p)
 
 float sdTerrain(vec3 p)
 {
-  return p.y - getHMapHeight(p.xz);
+  //return p.y - getHMapHeight(p.xz);
+  vec3 tpos = vec3(p.x, getHMapHeight(p.xz), p.z);
+  return distance(tpos, p);
 }
 
 float sdBox(vec3 p, vec3 b)
@@ -101,6 +107,8 @@ float sdAll(vec3 ray_pos, Object obj)
     return sdSphere(ray_pos - obj.pos, obj.size.x / 2.0);
   if (obj.type == 2)
     return sdTerrain(ray_pos - obj.pos);
+  if (obj.type == 3)
+    return sdBox(ray_pos - obj.pos, obj.size);
   return -1.0;
 }
 
@@ -142,54 +150,9 @@ mat3 setCamera(in vec3 ro, in vec3 ta, float cr)
   return mat3( cu, cv, cw );
 }
 
-MAP_RES map(vec3 pos)
+float map(vec3 pos)
 {
-  MAP_RES res;
-  res.dist = sdAll(pos, objects[0]);
-  res.id = 0;
-  MAP_RES first;
-  if (obj_length >= 1) {
-    first.dist = sdAll(pos, objects[1]);
-    first.id = 1;
-    res = opU(res, first);
-  }
-  if (obj_length >= 2) {
-    first.dist = sdAll(pos, objects[2]);
-    first.id = 2;
-    res = opU(res, first);
-  }
-  if (obj_length >= 3) {
-    first.dist = sdAll(pos, objects[3]);
-    first.id = 3;
-    res = opU(res, first);
-  }
-  if (obj_length >= 4) {
-    for (int i=4; i < 256; i += 4) {
-      if (i >= obj_length) break;
-      MAP_RES r;
-      if (obj_length >= i) {
-        r.dist = sdAll(pos, objects[i]);
-        r.id = i;
-        res = opU(res, r);
-      }
-      if (obj_length >= i + 1) {
-        r.dist = sdAll(pos, objects[i+1]);
-        r.id = i+1;
-        res = opU(res, r);
-      }
-      if (obj_length >= i + 2) {
-        r.dist = sdAll(pos, objects[i+2]);
-        r.id = i+2;
-        res = opU(res, r);
-      }
-      if (obj_length >= i + 3) {
-        r.dist = sdAll(pos, objects[i+3]);
-        r.id = i+3;
-        res = opU(res, r);
-      }
-    }
-  }
-  return res;
+  return sdAll(pos, object);
 }
 
 //Softshadow function.
@@ -197,13 +160,15 @@ MAP_RES map(vec3 pos)
 //RD is the ray's direction, in this case the light's direction.
 //mint is the near plane value.
 //tmax is the far plane value.
-float softshadow( in vec3 ro, in vec3 rd, in float mint, in float tmax )
+float softshadow( in vec3 ro, in vec3 rd, in float mint, in float tmax, float depth )
 {
 	float res = 1.0;
   float t = mint;
   for( int i=0; i<32; i++ )
   {
-		float h = map( ro + rd*t ).dist;
+		float h = map( ro + rd*t );
+    float dist = distance(ro + rd*t, cam.pos);
+    if (dist > depth) h = 0.0;
     res = min( res, 8.0*h/t );
     t += clamp( h, 0.02, 0.10 );
     if( h<0.001 || t>tmax ) break;
@@ -217,10 +182,10 @@ float softshadow( in vec3 ro, in vec3 rd, in float mint, in float tmax )
 vec3 calcNormal( in vec3 pos )
 {
   vec2 e = vec2(1.0,-1.0)*0.5773*0.0005;
-  return normalize( e.xyy*map( pos + e.xyy ).dist +
-				  e.yyx*map( pos + e.yyx ).dist +
-				  e.yxy*map( pos + e.yxy ).dist +
-				  e.xxx*map( pos + e.xxx ).dist );
+  return normalize( e.xyy*map( pos + e.xyy ) +
+				  e.yyx*map( pos + e.yyx ) +
+				  e.yxy*map( pos + e.yxy ) +
+				  e.xxx*map( pos + e.xxx ) );
 }
 
 RAY_RES castRay(vec3 ro, vec3 rd, int samples)
@@ -230,25 +195,23 @@ RAY_RES castRay(vec3 ro, vec3 rd, int samples)
   float t = 0.02;
   float K = 0.001;
   for (int i=0; i<samples; i++) {
-    MAP_RES r = map(ro + rd * t);
-    if (r.dist < K * t && r.dist >= 0.0) {
+    float dist = map(ro + rd * t);
+    if (dist < K * t && dist >= 0.0) {
       //return vec3(r.y);
-      Object o = objects[r.id];
-      Material m = materials[o.mat_id];
       RAY_RES res;
-      res.obj = o;
-      res.mat = m;
+      res.obj = object;
+      res.mat = material;
       res.dist = t;
       return res;
     }
-    t += r.dist;
+    t += dist;
   }
 
   RAY_RES sky_res;
   Material sky_mat;
   sky_mat.color = col;
   sky_res.mat = sky_mat;
-  sky_res.dist = -1.0;
+  sky_res.dist = 128.0;
 
   return sky_res;
 }
@@ -331,7 +294,7 @@ vec2 PrefilteredDFG_Karis(float roughness, float NoV) {
     return vec2(-1.04, 1.04) * a004 + r.zw;
 }
 
-vec3 BRDF (vec3 pos, vec3 n, vec3 rd, vec3 l, vec3 lp, float range, vec3 baseColor, float roughness, float metallic)
+vec3 BRDF (vec3 pos, vec3 n, vec3 rd, vec3 l, vec3 lp, float range, vec3 baseColor, float roughness, float metallic, float depth)
 {
 	vec3 color = vec3(0.0);
 
@@ -359,12 +322,14 @@ vec3 BRDF (vec3 pos, vec3 n, vec3 rd, vec3 l, vec3 lp, float range, vec3 baseCol
 	vec3 diffuseColor = (1.0 - metallic) * baseColor.rgb;
 	vec3 f0 = 0.04 * (1.0 - metallic) + baseColor.rgb * metallic;
 
-	float attenuation = softshadow(pos, l, 0.02, 25.0);
+	float attenuation = softshadow(pos, l, 0.02, 25.0, depth);
 
-	indirectIntensity *= attenuation;
+	//indirectIntensity *= attenuation;
+
+  float fLinearRoughness = (0.5 + roughness*0.5) * (0.5 + roughness*0.5);
 
 	//Specular BRDF
-	float D = D_GGX(linearRoughness, NoH, h) * attenuation;
+	float D = D_GGX(linearRoughness, NoH, h);
 	float V = V_SmithGGXCorrelated(linearRoughness, NoV, NoL);
 	vec3 F = F_Schlick(f0, LoH);
 	vec3 Fr = (D * V) * F;
@@ -386,7 +351,7 @@ vec3 BRDF (vec3 pos, vec3 n, vec3 rd, vec3 l, vec3 lp, float range, vec3 baseCol
 	//Indirect Contribution
 	vec2 dfg = PrefilteredDFG_Karis(roughness, NoV);
 	vec3 specularColor = f0 * dfg.x + dfg.y;
-	vec3 ibl = diffuseColor * indirectDiffuse + indirectSpecular * specularColor * attenuation;
+	vec3 ibl = diffuseColor * indirectDiffuse + indirectSpecular * specularColor;
 
 	color += ibl * indirectIntensity;
 
@@ -414,13 +379,30 @@ float orenNayarDiffuse(
   return albedo * max(0.0, NdotL) * (A + B * s / t) / PI;
 }
 
+vec3 mapTex(vec3 pos, vec3 nor, sampler2D texture, int type)
+{
+  if (type == 0 || type == 2) {
+    vec2 uv = mod(pos.xz, vec2(1.0));
+    return Texel(texture, uv).rgb;
+  } else if (type == 1) {
+    vec2 uv = vec2(nor.x/2.0 + 0.5, nor.y/2.0 + 0.5);
+    return Texel(texture, uv).rgb;
+  }
+
+  return vec3(1.0);
+}
+
 vec4 effect(vec4 color, sampler2D tex, vec2 uv, vec2 screen_coords)
 {
+  //if (mod(screen_coords.x + mod(screen_coords.y, 2.0), 2.0) == 0.0)
+  //  return vec4(0.0, 0.0, 0.0, 1.0);
   //Camera matrix calculation
   mat3 cam_mat = setCamera(cam.pos, cam.pos + cam.dir, cam.roll);
 
+  float depth = Texel(depth_map, uv).r * 128.0;
+
   //UV and stuff
-  vec2 fc = vec2(uv.x, 1.0 - uv.y) * res; //fc = fragCoord, uv * res for the calculation of p
+  vec2 fc = vec2(1.0 - uv.x, 1.0 - uv.y) * res; //fc = fragCoord, uv * res for the calculation of p
   vec2 p = (-res + 2.0*fc)/res.y;
 
   //Ray direction
@@ -429,19 +411,28 @@ vec4 effect(vec4 color, sampler2D tex, vec2 uv, vec2 screen_coords)
   RAY_RES res = castRay(cam.pos, rd, 128);
   //return vec4(vec3(res.dist / 64.0), 1.0);
 
+  if (res.dist > depth && depth > 0.0) return Texel(src_map, uv);
+
   if (res.dist < 0.0) return vec4(res.mat.color, 1.0);
+
   vec3 pos = cam.pos + rd * res.dist;
   vec3 nor = calcNormal(pos);
   vec3 col;
+
+  //return vec4(vec3(res.dist / 128.0), 1.0);
 
   //return vec4((nor + vec3(1.0)) / vec3(2.0), 1.0);
 
   for (int i=0; i<256; i++) {
     if (i >= dir_light_length) break;
     vec3 lig = normalize(dir_lights[i].dir);
-    col += BRDF(pos, nor, rd, lig, vec3(0.0), -1, res.mat.color, res.mat.roughness, res.mat.metallicness);
+    vec3 mat_col = res.mat.color;
+    if (res.mat.use_tex == 1) {
+      mat_col *= mapTex(pos, nor, mat_tex, res.obj.type);
+    }
+    col += BRDF(pos, nor, rd, lig, vec3(0.0), -1, mat_col, res.mat.roughness, res.mat.metallicness, depth);
     //col += orenNayarDiffuse(lig, rd, nor, res.mat.roughness, 1.0) * res.mat.color * softshadow(pos, lig, 0.02, 25.0);
-    //col += orenNayarDiffuse(lig, rd, nor, res.mat.roughness, softshadow(pos, lig, 0.02, 25.0)) * res.mat.color;
+    //col += orenNayarDiffuse(lig, rd, nor, res.mat.roughness, softshadow(pos, lig, 0.02, 25.0)) * mat_col;
   }
 
   return vec4(col, 1.0);
